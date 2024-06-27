@@ -3,8 +3,11 @@ pragma solidity ^0.8.18;
 
 import "forge-std/console.sol";
 import {Setup, ERC20, IStrategyInterface} from "./utils/Setup.sol";
+import {IERC4626} from "@openzeppelin/contracts/interfaces/IERC4626.sol";
 
 contract OperationTest is Setup {
+    IERC4626 public constant AURA_POOL = IERC4626(0xBDD6984C3179B099E9D383ee2F44F3A57764BF7d);
+
     function setUp() public virtual override {
         super.setUp();
     }
@@ -17,6 +20,20 @@ contract OperationTest is Setup {
         assertEq(strategy.performanceFeeRecipient(), performanceFeeRecipient);
         assertEq(strategy.keeper(), keeper);
         // TODO: add additional check on strat params
+    }
+
+    function test_deposit(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        uint256 lpBefore = AURA_POOL.balanceOf(address(strategy));
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        uint256 lpAfter = AURA_POOL.balanceOf(address(strategy));
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+        assertGt(lpAfter, lpBefore, "lp not deposited");
     }
 
     function test_operation(uint256 _amount) public {

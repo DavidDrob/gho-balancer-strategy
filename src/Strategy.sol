@@ -3,9 +3,11 @@ pragma solidity 0.8.18;
 
 import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {IVault} from "@balancer/interfaces/contracts/vault/IVault.sol";
+import {IAsset} from "@balancer/interfaces/contracts/vault/IAsset.sol";
 
-// Import interfaces for many popular DeFi projects, or add your own!
-//import "../interfaces/<protocol>/<Interface>.sol";
+import "./interfaces/aave/IGhoToken.sol";
+import "./interfaces/aura/IRewardPool4626.sol";
 
 /**
  * The `TokenizedStrategy` variable can be used to retrieve the strategies
@@ -23,10 +25,21 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 contract Strategy is BaseStrategy {
     using SafeERC20 for ERC20;
 
+    address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
+    address public constant BAL_LP = 0x8353157092ED8Be69a9DF8F95af097bbF33Cb2aF;
+
+    IVault public constant BALANCER_VAULT = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
+    IRewardPool4626 public constant AURA_POOL = IRewardPool4626(0xBDD6984C3179B099E9D383ee2F44F3A57764BF7d);
+
+    bytes32 public constant POOL_ID = bytes32(0x8353157092ed8be69a9df8f95af097bbf33cb2af0000000000000000000005d9);
+
     constructor(
         address _asset,
         string memory _name
-    ) BaseStrategy(_asset, _name) {}
+    ) BaseStrategy(_asset, _name) {
+        IGhoToken(GHO).approve(address(BALANCER_VAULT), type(uint256).max);
+        IERC20(BAL_LP).approve(address(AURA_POOL), type(uint256).max);
+    }
 
     /*//////////////////////////////////////////////////////////////
                 NEEDED TO BE OVERRIDDEN BY STRATEGIST
@@ -44,9 +57,32 @@ contract Strategy is BaseStrategy {
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        // TODO: implement deposit logic EX:
-        //
-        //      lendingPool.deposit(address(asset), _amount ,0);
+        // Deposit GHO into Balancer Pool
+        IVault.FundManagement memory funds = IVault.FundManagement(
+            address(this),
+            false,
+            payable(address(this)),
+            false
+        );
+
+        IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+            POOL_ID,
+            IVault.SwapKind.GIVEN_IN,
+            IAsset(GHO),
+            IAsset(BAL_LP),
+            _amount,
+            ""
+        );
+
+        uint256 _out = BALANCER_VAULT.swap(
+            singleSwap,
+            funds,
+            0, // TODO: add slippage
+            block.timestamp
+        );
+
+        // Stake LP
+        AURA_POOL.deposit(_out, address(this));
     }
 
     /**
