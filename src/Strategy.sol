@@ -5,6 +5,9 @@ import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVault} from "@balancer/interfaces/contracts/vault/IVault.sol";
 import {IAsset} from "@balancer/interfaces/contracts/vault/IAsset.sol";
+import {IBalancerQueries} from "@balancer/interfaces/contracts/standalone-utils/IBalancerQueries.sol";
+
+import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./interfaces/aave/IGhoToken.sol";
 import "./interfaces/aura/IRewardPool4626.sol";
@@ -29,9 +32,17 @@ contract Strategy is BaseStrategy {
     address public constant BAL_LP = 0x8353157092ED8Be69a9DF8F95af097bbF33Cb2aF;
 
     IVault public constant BALANCER_VAULT = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
+    IBalancerQueries public constant BALANCER_QUERY = IBalancerQueries(0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5);
     IRewardPool4626 public constant AURA_POOL = IRewardPool4626(0xBDD6984C3179B099E9D383ee2F44F3A57764BF7d);
 
     bytes32 public constant POOL_ID = bytes32(0x8353157092ed8be69a9df8f95af097bbf33cb2af0000000000000000000005d9);
+
+    IVault.FundManagement private FUNDS = IVault.FundManagement(
+        address(this),
+        false,
+        payable(address(this)),
+        false
+    );
 
     constructor(
         address _asset,
@@ -58,13 +69,6 @@ contract Strategy is BaseStrategy {
      */
     function _deployFunds(uint256 _amount) internal override {
         // Deposit GHO into Balancer Pool
-        IVault.FundManagement memory funds = IVault.FundManagement(
-            address(this),
-            false,
-            payable(address(this)),
-            false
-        );
-
         IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
             POOL_ID,
             IVault.SwapKind.GIVEN_IN,
@@ -76,7 +80,7 @@ contract Strategy is BaseStrategy {
 
         uint256 _out = BALANCER_VAULT.swap(
             singleSwap,
-            funds,
+            FUNDS,
             0, // TODO: add slippage
             block.timestamp
         );
@@ -107,9 +111,48 @@ contract Strategy is BaseStrategy {
      * @param _amount, The amount of 'asset' to be freed.
      */
     function _freeFunds(uint256 _amount) internal override {
-        // TODO: implement withdraw logic EX:
-        //
-        //      lendingPool.withdraw(address(asset), _amount);
+        // Calculate LP amount to withdraw
+        IVault.SingleSwap memory querySwap = IVault.SingleSwap(
+            POOL_ID,
+            IVault.SwapKind.GIVEN_OUT,
+            IAsset(BAL_LP),
+            IAsset(GHO),
+            _amount,
+            ""
+        );
+
+        uint256 _desired_lp_amount = BALANCER_QUERY.querySwap(
+            querySwap,
+            FUNDS
+        );
+
+        uint256 _staked_tokens = AURA_POOL.balanceOf(address(this));
+
+        uint256 _lp_amount = Math.min(_desired_lp_amount, _staked_tokens);
+
+        // Withdraw LP from Aura Pool
+        uint256 bptAmount = AURA_POOL.redeem(
+            _lp_amount,
+            address(this),
+            address(this)
+        );
+
+        // Swap LP for GHO
+        IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+            POOL_ID,
+            IVault.SwapKind.GIVEN_IN,
+            IAsset(BAL_LP),
+            IAsset(GHO),
+            bptAmount,
+            ""
+        );
+
+        BALANCER_VAULT.swap(
+            singleSwap,
+            FUNDS,
+            0, // TODO: slippage
+            block.timestamp
+        );
     }
 
     /**
@@ -183,7 +226,7 @@ contract Strategy is BaseStrategy {
         // if(yieldSource.notShutdown()) {
         //    return asset.balanceOf(address(this)) + asset.balanceOf(yieldSource);
         // }
-        return asset.balanceOf(address(this));
+        return type(uint256).max;
     }
 
     /**

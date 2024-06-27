@@ -36,6 +36,32 @@ contract OperationTest is Setup {
         assertGt(lpAfter, lpBefore, "lp not deposited");
     }
 
+    function test_withdraw(uint256 _amount) public {
+        vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        assertEq(strategy.totalAssets(), _amount, "!totalAssets");
+
+        skip(strategy.profitMaxUnlockTime());
+
+        uint256 balanceBefore = asset.balanceOf(user);
+
+        // Withdraw all funds
+        vm.startPrank(user);
+        strategy.redeem(_amount, user, user);
+
+        assertEq(strategy.balanceOf(user), 0);
+        assertEq(asset.balanceOf(address(strategy)), 0);
+        assertApproxEqRel(
+          asset.balanceOf(user),
+          balanceBefore + _amount,
+          0.05e18, // fees
+          "!final balance"
+        );
+    }
+
     function test_operation(uint256 _amount) public {
         vm.assume(_amount > minFuzzAmount && _amount < maxFuzzAmount);
 
