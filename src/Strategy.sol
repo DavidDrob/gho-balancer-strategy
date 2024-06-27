@@ -29,6 +29,9 @@ contract Strategy is BaseStrategy {
     using SafeERC20 for ERC20;
 
     address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
+    address public constant BAL = 0xba100000625a3754423978a60c9317c58a424e3D;
+    address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+    address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant BAL_LP = 0x8353157092ED8Be69a9DF8F95af097bbF33Cb2aF;
 
     IVault public constant BALANCER_VAULT = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
@@ -49,6 +52,9 @@ contract Strategy is BaseStrategy {
         string memory _name
     ) BaseStrategy(_asset, _name) {
         IGhoToken(GHO).approve(address(BALANCER_VAULT), type(uint256).max);
+        IERC20(BAL).approve(address(BALANCER_VAULT), type(uint256).max);
+        IERC20(WETH).approve(address(BALANCER_VAULT), type(uint256).max);
+        ERC20(USDT).safeIncreaseAllowance(address(BALANCER_VAULT), type(uint256).max);
         IERC20(BAL_LP).approve(address(AURA_POOL), type(uint256).max);
     }
 
@@ -182,15 +188,100 @@ contract Strategy is BaseStrategy {
         override
         returns (uint256 _totalAssets)
     {
-        // TODO: Implement harvesting logic and accurate accounting EX:
-        //
-        //      if(!TokenizedStrategy.isShutdown()) {
-        //          _claimAndSellRewards();
-        //      }
-        //      _totalAssets = aToken.balanceOf(address(this)) + asset.balanceOf(address(this));
-        //
-        _totalAssets = asset.balanceOf(address(this));
+            bool _claimedSucessfully = AURA_POOL.getReward();
+
+            uint256 balAmount = IERC20(BAL).balanceOf(address(this));
+
+            // TODO: batch swaps
+            uint256 _wethOut = _swapBalForWeth(balAmount);
+            uint256 _usdtOut = _swapWethForUSDT(_wethOut);
+
+            // deposit USDT into balancer pool
+            IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+                POOL_ID,
+                IVault.SwapKind.GIVEN_IN,
+                IAsset(USDT),
+                IAsset(BAL_LP),
+                _usdtOut,
+                ""
+            );
+
+            uint256 _out = BALANCER_VAULT.swap(
+                singleSwap,
+                FUNDS,
+                0, // slippage
+                block.timestamp
+            );
+
+            // Stake LP
+            uint256 _auraLpReceived = AURA_POOL.deposit(_out, address(this));
+
+            uint256 idk = AURA_POOL.maxWithdraw(address(this));
+            uint256 _balAmountTotal =
+                AURA_POOL.previewWithdraw(idk) +
+                IERC20(BAL_LP).balanceOf(address(this));
+
+            IVault.SingleSwap memory querySwap = IVault.SingleSwap(
+                POOL_ID,
+                IVault.SwapKind.GIVEN_OUT,
+                IAsset(BAL_LP),
+                IAsset(GHO),
+                _balAmountTotal,
+                ""
+            );
+
+            uint256 ghoAmountExpected = BALANCER_QUERY.querySwap(
+                querySwap,
+                FUNDS
+            );
+
+            // add AURA rewards
+            _totalAssets += ghoAmountExpected + IGhoToken(GHO).balanceOf(address(this));
     }
+
+    function _swapBalForWeth(uint256 _amount) internal returns (uint256) {
+            bytes32 balWethPoolId =
+                bytes32(
+                    0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014
+                );
+            IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+                balWethPoolId,
+                IVault.SwapKind.GIVEN_IN,
+                IAsset(BAL),
+                IAsset(WETH),
+                _amount,
+                ""
+            );
+
+            return BALANCER_VAULT.swap(
+                singleSwap,
+                FUNDS,
+                0,
+                block.timestamp
+            );
+    }
+
+    function _swapWethForUSDT(uint256 _amount) internal returns (uint256) {
+            bytes32 wethUsdtPoolId =
+                bytes32(
+                    0x3e5fa9518ea95c3e533eb377c001702a9aacaa32000200000000000000000052 
+            );
+            IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+                wethUsdtPoolId,
+                IVault.SwapKind.GIVEN_IN,
+                IAsset(WETH),
+                IAsset(USDT),
+                _amount,
+                ""
+            );
+
+            return BALANCER_VAULT.swap(
+                singleSwap,
+                FUNDS,
+                0,
+                block.timestamp
+            );
+   }
 
     /*//////////////////////////////////////////////////////////////
                     OPTIONAL TO OVERRIDE BY STRATEGIST
