@@ -216,9 +216,9 @@ contract Strategy is BaseStrategy {
             // Stake LP
             uint256 _auraLpReceived = AURA_POOL.deposit(_out, address(this));
 
-            uint256 idk = AURA_POOL.maxWithdraw(address(this));
+            uint256 _auraBalance = AURA_POOL.maxWithdraw(address(this));
             uint256 _balAmountTotal =
-                AURA_POOL.previewWithdraw(idk) +
+                AURA_POOL.previewWithdraw(_auraBalance) +
                 IERC20(BAL_LP).balanceOf(address(this));
 
             IVault.SingleSwap memory querySwap = IVault.SingleSwap(
