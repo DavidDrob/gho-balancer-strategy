@@ -40,6 +40,9 @@ contract Strategy is BaseStrategy {
 
     bytes32 public constant POOL_ID = bytes32(0x8353157092ed8be69a9df8f95af097bbf33cb2af0000000000000000000005d9);
 
+    uint256 public constant SLIPPAGE = 9_900; // slippage in BPS
+    uint256 public constant MAX_BPS = 10_000;
+
     IVault.FundManagement private FUNDS = IVault.FundManagement(
         address(this),
         false,
@@ -84,10 +87,13 @@ contract Strategy is BaseStrategy {
             ""
         );
 
+        // pool consists of stablecoins, so LP price is almost 1:1 to assets
+        uint256 limit = Math.mulDiv(_amount, SLIPPAGE, MAX_BPS);
+
         uint256 _out = BALANCER_VAULT.swap(
             singleSwap,
             FUNDS,
-            0, // TODO: add slippage
+            limit,
             block.timestamp
         );
 
@@ -156,7 +162,7 @@ contract Strategy is BaseStrategy {
         BALANCER_VAULT.swap(
             singleSwap,
             FUNDS,
-            0, // TODO: slippage
+            0, // vault already checks for slippage
             block.timestamp
         );
     }
