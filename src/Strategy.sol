@@ -2,6 +2,7 @@
 pragma solidity 0.8.18;
 
 import {BaseStrategy, ERC20} from "@tokenized-strategy/BaseStrategy.sol";
+import {Auction, AuctionSwapper} from "@periphery/swappers/AuctionSwapper.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVault} from "@balancer/interfaces/contracts/vault/IVault.sol";
 import {IAsset} from "@balancer/interfaces/contracts/vault/IAsset.sol";
@@ -25,7 +26,10 @@ import "./interfaces/aura/IRewardPool4626.sol";
 
 // NOTE: To implement permissioned functions you can use the onlyManagement, onlyEmergencyAuthorized and onlyKeepers modifiers
 
-contract Strategy is BaseStrategy {
+error BalancerStrategy__InvalidToken();
+error BalancerStrategy__TooLittleBAL();
+
+contract Strategy is BaseStrategy, AuctionSwapper {
     using SafeERC20 for ERC20;
 
     address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
@@ -43,6 +47,8 @@ contract Strategy is BaseStrategy {
     uint256 public constant SLIPPAGE = 9_900; // slippage in BPS
     uint256 public constant MAX_BPS = 10_000;
 
+    uint256 public constant MIN_BAL_TO_AUCTION = 12e18; // 12 BAL
+
     IVault.FundManagement private FUNDS = IVault.FundManagement(
         address(this),
         false,
@@ -59,6 +65,28 @@ contract Strategy is BaseStrategy {
         IERC20(WETH).approve(address(BALANCER_VAULT), type(uint256).max);
         ERC20(USDT).safeIncreaseAllowance(address(BALANCER_VAULT), type(uint256).max);
         IERC20(BAL_LP).approve(address(AURA_POOL), type(uint256).max);
+    }
+
+    // TODO: do this in the constructor
+    function setAuction(address _auction) external onlyManagement {
+        if (_auction != address(0)) {
+            require(Auction(_auction).want() == address(asset));
+        }
+        auction = _auction;
+    }
+
+    function _auctionKicked(address _token)
+        internal
+        virtual
+        override
+        returns (uint256 _kicked)
+    {
+        if (_token != BAL) revert BalancerStrategy__InvalidToken();
+
+        // send BAL to auction contract
+        _kicked = super._auctionKicked(_token);
+
+        if (_kicked < MIN_BAL_TO_AUCTION) revert BalancerStrategy__TooLittleBAL();
     }
 
     /*//////////////////////////////////////////////////////////////
