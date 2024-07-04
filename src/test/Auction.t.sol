@@ -13,10 +13,12 @@ contract AuctionTest is Setup {
     bytes32 public auctionId;
 
     IERC20 bal;
+    IERC20 auraPool;
 
     function setUp() public virtual override {
         super.setUp();
         bal = IERC20(tokenAddrs["BAL"]);
+        auraPool = IERC20(0xBDD6984C3179B099E9D383ee2F44F3A57764BF7d);
 
         // setup dutch auction
         // BAL -> GHO
@@ -29,7 +31,7 @@ contract AuctionTest is Setup {
             auctionFactory.createNewAuction(strategy.asset(), address(strategy))
         );
         auctionId = auction.enable(address(bal), address(strategy));
-        auction.setHookFlags(true, true, false, false);
+        auction.setHookFlags(true, true, false, true);
 
         strategy.setAuction(address(auction));
         vm.stopPrank();
@@ -41,7 +43,7 @@ contract AuctionTest is Setup {
         // Deposit into strategy
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
-        uint256 assetBeforeAuction = asset.balanceOf(address(strategy));
+        uint256 lpBeforeAuction = auraPool.balanceOf(address(strategy));
 
         // airdrop on strategy
         uint256 toAirdrop = strategy.MIN_BAL_TO_AUCTION();
@@ -69,10 +71,30 @@ contract AuctionTest is Setup {
         vm.prank(buyer);
         auction.take(auctionId);
 
-        uint256 assetAfterAuction = asset.balanceOf(address(strategy));
-        assertGt(assetAfterAuction, assetBeforeAuction);
+        uint256 lpAfterAuction = auraPool.balanceOf(address(strategy));
+        assertGt(lpAfterAuction, lpBeforeAuction);
 
         skip(strategy.profitMaxUnlockTime());
+
+        vm.prank(keeper);
+        (uint256 profit, uint256 loss) = strategy.report();
+
+        assertGt(profit, 0, "!profit");
+        assertEq(loss, 0, "!loss");
+
+        skip(strategy.profitMaxUnlockTime());
+
+        uint256 balanceBefore = asset.balanceOf(user);
+
+        // Withdraw all funds
+        vm.prank(user);
+        strategy.redeem(_amount, user, user);
+
+        assertGe(
+            asset.balanceOf(user),
+            balanceBefore + _amount,
+            "!final balance"
+        );
     }
 }
 

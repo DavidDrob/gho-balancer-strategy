@@ -93,6 +93,37 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         if (_kicked < MIN_BAL_TO_AUCTION) revert BalancerStrategy__TooLittleBAL();
     }
 
+    function _postTake(
+        address _token,
+        uint256,
+        uint256 _amountPayed
+    ) internal virtual override {
+        if (_token != GHO) revert BalancerStrategy__InvalidToken();
+
+        // Deposit GHO into Balancer Pool
+        IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+            POOL_ID,
+            IVault.SwapKind.GIVEN_IN,
+            IAsset(GHO),
+            IAsset(BAL_LP),
+            _amountPayed,
+            ""
+        );
+
+        // pool consists of stablecoins, so LP price is almost 1:1 to assets
+        uint256 limit = Math.mulDiv(_amountPayed, SLIPPAGE, MAX_BPS);
+
+        uint256 _out = BALANCER_VAULT.swap(
+            singleSwap,
+            FUNDS,
+            limit,
+            block.timestamp
+        );
+
+        // Stake LP
+        AURA_POOL.deposit(_out, address(this));
+    }
+
     /*//////////////////////////////////////////////////////////////
                 NEEDED TO BE OVERRIDDEN BY STRATEGIST
     //////////////////////////////////////////////////////////////*/
