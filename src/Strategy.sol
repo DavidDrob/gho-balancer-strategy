@@ -12,6 +12,7 @@ import "@openzeppelin/contracts/utils/math/Math.sol";
 
 import "./interfaces/aave/IGhoToken.sol";
 import "./interfaces/aura/IRewardPool4626.sol";
+import "./interfaces/balancer/IWeightedPool2Tokens.sol";
 
 /**
  * The `TokenizedStrategy` variable can be used to retrieve the strategies
@@ -28,12 +29,14 @@ import "./interfaces/aura/IRewardPool4626.sol";
 
 error BalancerStrategy__InvalidToken();
 error BalancerStrategy__TooLittleBAL();
+error BalancerStrategy__NoAuraRewards();
 
 contract Strategy is BaseStrategy, AuctionSwapper {
     using SafeERC20 for ERC20;
 
     address public constant GHO = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
     address public constant BAL = 0xba100000625a3754423978a60c9317c58a424e3D;
+    address public constant AURA = 0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
     address public constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
     address public constant WETH = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2;
     address public constant BAL_LP = 0x8353157092ED8Be69a9DF8F95af097bbF33Cb2aF;
@@ -41,6 +44,7 @@ contract Strategy is BaseStrategy, AuctionSwapper {
     IVault public constant BALANCER_VAULT = IVault(0xBA12222222228d8Ba445958a75a0704d566BF2C8);
     IBalancerQueries public constant BALANCER_QUERY = IBalancerQueries(0xE39B5e3B6D74016b2F6A9673D7d7493B6DF549d5);
     IRewardPool4626 public constant AURA_POOL = IRewardPool4626(0xBDD6984C3179B099E9D383ee2F44F3A57764BF7d);
+    IWeightedPool2Tokens public constant BAL_USDC_POOl = IWeightedPool2Tokens(0x9c08C7a7a89cfD671c79eacdc6F07c1996277eD5);
 
     bytes32 public constant POOL_ID = bytes32(0x8353157092ed8be69a9df8f95af097bbf33cb2af0000000000000000000005d9);
 
@@ -223,44 +227,20 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         returns (uint256 _totalAssets)
     {
             bool _claimedSucessfully = AURA_POOL.getReward();
-
-            uint256 balAmount = IERC20(BAL).balanceOf(address(this));
-
-            // TODO: batch swaps
-            uint256 _wethOut = _swapBalForWeth(balAmount);
-            uint256 _usdtOut = _swapWethForUSDT(_wethOut);
-
-            // deposit USDT into balancer pool
-            IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
-                POOL_ID,
-                IVault.SwapKind.GIVEN_IN,
-                IAsset(USDT),
-                IAsset(BAL_LP),
-                _usdtOut,
-                ""
-            );
-
-            uint256 _out = BALANCER_VAULT.swap(
-                singleSwap,
-                FUNDS,
-                0, // slippage
-                block.timestamp
-            );
-
-            // Stake LP
-            uint256 _auraLpReceived = AURA_POOL.deposit(_out, address(this));
+            if (!_claimedSucessfully) revert BalancerStrategy__NoAuraRewards();
 
             uint256 _auraBalance = AURA_POOL.maxWithdraw(address(this));
-            uint256 _balAmountTotal =
+            uint256 _lpAmountTotal =
                 AURA_POOL.previewWithdraw(_auraBalance) +
                 IERC20(BAL_LP).balanceOf(address(this));
 
+            // LP in GHO
             IVault.SingleSwap memory querySwap = IVault.SingleSwap(
                 POOL_ID,
                 IVault.SwapKind.GIVEN_OUT,
                 IAsset(BAL_LP),
                 IAsset(GHO),
-                _balAmountTotal,
+                _lpAmountTotal,
                 ""
             );
 
@@ -269,8 +249,16 @@ contract Strategy is BaseStrategy, AuctionSwapper {
                 FUNDS
             );
 
-            // add AURA rewards
-            _totalAssets += ghoAmountExpected + IGhoToken(GHO).balanceOf(address(this));
+            // assuming USDC and GHO are 1:1
+            uint256 balRate = BAL_USDC_POOl.getLatest(uint8(0));
+            uint256 balAmount = IERC20(BAL).balanceOf(address(this));
+            uint256 balInGho = Math.mulDiv(balRate, balAmount, 1e18);
+
+            // TODO: add AURA rewards
+            _totalAssets +=
+                ghoAmountExpected +
+                IGhoToken(GHO).balanceOf(address(this)) + 
+                balInGho;
     }
 
     function _swapBalForWeth(uint256 _amount) internal returns (uint256) {

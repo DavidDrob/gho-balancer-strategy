@@ -73,13 +73,6 @@ contract OperationTest is Setup {
         // Earn Interest
         skip(1 days);
 
-        // `asset` is not used in harvest, so we airdrop BAL
-        // TODO: implement logic to simulate earning interest.
-        // TODO: use real-time price
-        uint256 balPrice = 3;
-        uint256 toAirdrop = (_amount / balPrice);
-        airdrop(ERC20(tokenAddrs["BAL"]), address(strategy), toAirdrop);
-
         // Report profit
         vm.prank(keeper);
         (uint256 profit, uint256 loss) = strategy.report();
@@ -118,12 +111,9 @@ contract OperationTest is Setup {
         // Earn Interest
         skip(1 days);
 
-        // `asset` is not used in harvest, so we airdrop BAL
         // TODO: implement logic to simulate earning interest.
-        // TODO: use real-time price
-        uint256 balPrice = 3;
-        uint256 toAirdrop = ((_amount / balPrice) * _profitFactor) / MAX_BPS;
-        airdrop(ERC20(tokenAddrs["BAL"]), address(strategy), toAirdrop);
+        uint256 toAirdrop = (_amount * _profitFactor) / MAX_BPS;
+        airdrop(asset, address(strategy), toAirdrop);
 
         // Report profit
         vm.prank(keeper);
