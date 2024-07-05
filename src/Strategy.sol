@@ -71,6 +71,10 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         IERC20(BAL_LP).approve(address(AURA_POOL), type(uint256).max);
     }
 
+    /*//////////////////////////////////////////////////////////////
+                        MANAGMENT FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
+
     // TODO: do this in the constructor
     function setAuction(address _auction) external onlyManagement {
         if (_auction != address(0)) {
@@ -79,53 +83,9 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         auction = _auction;
     }
 
-    function _auctionKicked(address _token)
-        internal
-        virtual
-        override
-        returns (uint256 _kicked)
-    {
-        if (_token != BAL) revert BalancerStrategy__InvalidToken();
-
-        // send BAL to auction contract
-        _kicked = super._auctionKicked(_token);
-
-        if (_kicked < MIN_BAL_TO_AUCTION) revert BalancerStrategy__TooLittleBAL();
-    }
-
-    function _postTake(
-        address _token,
-        uint256,
-        uint256 _amountPayed
-    ) internal virtual override {
-        if (_token != GHO) revert BalancerStrategy__InvalidToken();
-
-        // Deposit GHO into Balancer Pool
-        IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
-            POOL_ID,
-            IVault.SwapKind.GIVEN_IN,
-            IAsset(GHO),
-            IAsset(BAL_LP),
-            _amountPayed,
-            ""
-        );
-
-        // pool consists of stablecoins, so LP price is almost 1:1 to assets
-        uint256 limit = Math.mulDiv(_amountPayed, SLIPPAGE, MAX_BPS);
-
-        uint256 _out = BALANCER_VAULT.swap(
-            singleSwap,
-            FUNDS,
-            limit,
-            block.timestamp
-        );
-
-        // Stake LP
-        AURA_POOL.deposit(_out, address(this));
-    }
 
     /*//////////////////////////////////////////////////////////////
-                NEEDED TO BE OVERRIDDEN BY STRATEGIST
+                      BASE STRATEGY FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
     /**
@@ -292,49 +252,54 @@ contract Strategy is BaseStrategy, AuctionSwapper {
                 balInGho;
     }
 
-    function _swapBalForWeth(uint256 _amount) internal returns (uint256) {
-            bytes32 balWethPoolId =
-                bytes32(
-                    0x5c6ee304399dbdb9c8ef030ab642b10820db8f56000200000000000000000014
-                );
-            IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
-                balWethPoolId,
-                IVault.SwapKind.GIVEN_IN,
-                IAsset(BAL),
-                IAsset(WETH),
-                _amount,
-                ""
-            );
+    /*//////////////////////////////////////////////////////////////
+                          AUCTION FUNCTIONS
+    //////////////////////////////////////////////////////////////*/
 
-            return BALANCER_VAULT.swap(
-                singleSwap,
-                FUNDS,
-                0,
-                block.timestamp
-            );
+    function _auctionKicked(address _token)
+        internal
+        virtual
+        override
+        returns (uint256 _kicked)
+    {
+        if (_token != BAL) revert BalancerStrategy__InvalidToken();
+
+        // send BAL to auction contract
+        _kicked = super._auctionKicked(_token);
+
+        if (_kicked < MIN_BAL_TO_AUCTION) revert BalancerStrategy__TooLittleBAL();
     }
 
-    function _swapWethForUSDT(uint256 _amount) internal returns (uint256) {
-            bytes32 wethUsdtPoolId =
-                bytes32(
-                    0x3e5fa9518ea95c3e533eb377c001702a9aacaa32000200000000000000000052 
-            );
-            IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
-                wethUsdtPoolId,
-                IVault.SwapKind.GIVEN_IN,
-                IAsset(WETH),
-                IAsset(USDT),
-                _amount,
-                ""
-            );
+    function _postTake(
+        address _token,
+        uint256,
+        uint256 _amountPayed
+    ) internal virtual override {
+        if (_token != GHO) revert BalancerStrategy__InvalidToken();
 
-            return BALANCER_VAULT.swap(
-                singleSwap,
-                FUNDS,
-                0,
-                block.timestamp
-            );
-   }
+        // Deposit GHO into Balancer Pool
+        IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+            POOL_ID,
+            IVault.SwapKind.GIVEN_IN,
+            IAsset(GHO),
+            IAsset(BAL_LP),
+            _amountPayed,
+            ""
+        );
+
+        // pool consists of stablecoins, so LP price is almost 1:1 to assets
+        uint256 limit = Math.mulDiv(_amountPayed, SLIPPAGE, MAX_BPS);
+
+        uint256 _out = BALANCER_VAULT.swap(
+            singleSwap,
+            FUNDS,
+            limit,
+            block.timestamp
+        );
+
+        // Stake LP
+        AURA_POOL.deposit(_out, address(this));
+    }
 
     /*//////////////////////////////////////////////////////////////
                     OPTIONAL TO OVERRIDE BY STRATEGIST
