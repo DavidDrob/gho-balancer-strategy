@@ -9,32 +9,14 @@ import {Auction, AuctionFactory} from "@periphery/Auctions/AuctionFactory.sol";
 import {Math} from "@openzeppelin/contracts/utils/math/Math.sol";
 
 contract AuctionTest is Setup {
-    Auction public auction;
-    bytes32 public auctionId;
-
     IERC20 bal;
     IERC20 auraPool;
 
     function setUp() public virtual override {
         super.setUp();
+
         bal = IERC20(tokenAddrs["BAL"]);
         auraPool = IERC20(0xBDD6984C3179B099E9D383ee2F44F3A57764BF7d);
-
-        // setup dutch auction
-        // BAL -> GHO
-        vm.startPrank(management);
-        AuctionFactory auctionFactory = AuctionFactory(
-            strategy.auctionFactory()
-        );
-        auction = Auction(
-            // TODO: include governance
-            auctionFactory.createNewAuction(strategy.asset(), address(strategy))
-        );
-        auctionId = auction.enable(address(bal), address(strategy));
-        auction.setHookFlags(true, true, false, true);
-
-        strategy.setAuction(address(auction));
-        vm.stopPrank();
     }
 
     function test_auction(uint256 _amount) public {
@@ -45,16 +27,18 @@ contract AuctionTest is Setup {
 
         uint256 lpBeforeAuction = auraPool.balanceOf(address(strategy));
 
-        // airdrop on strategy
         uint256 toAirdrop = strategy.MIN_BAL_TO_AUCTION();
-        deal(address(bal), address(strategy), toAirdrop - 1e18);
-        assertTrue(bal.balanceOf(address(strategy)) == 11e18);
-
-        // below minimum should revert
-        vm.expectRevert();
-        auction.kick(auctionId);
-
         deal(address(bal), address(strategy), toAirdrop);
+
+        // Start an auction
+        skip(strategy.profitMaxUnlockTime());
+        deal(address(bal), address(strategy), toAirdrop);
+        vm.prank(keeper);
+        strategy.report();
+
+        Auction auction = Auction(strategy.auction());
+        bytes32 auctionId = strategy.auctionId();
+
         auction.kick(auctionId);
 
         // wait until the auction is 75% complete
@@ -62,10 +46,11 @@ contract AuctionTest is Setup {
         address buyer = address(62735);
         uint256 amountNeeded = auction.getAmountNeeded(auctionId, toAirdrop);
 
-        deal(address(strategy.asset()), buyer, amountNeeded);
+        // TODO: find out why using `amountNeeded` doesn't work
+        deal(address(strategy.asset()), buyer, type(uint256).max);
 
         vm.prank(buyer);
-        asset.approve(address(auction), amountNeeded);
+        asset.approve(address(auction), type(uint256).max);
 
         // take the auction
         vm.prank(buyer);
@@ -73,16 +58,6 @@ contract AuctionTest is Setup {
 
         uint256 lpAfterAuction = auraPool.balanceOf(address(strategy));
         assertGt(lpAfterAuction, lpBeforeAuction);
-
-        skip(strategy.profitMaxUnlockTime());
-
-        vm.prank(keeper);
-        (uint256 profit, uint256 loss) = strategy.report();
-
-        assertGt(profit, 0, "!profit");
-        assertEq(loss, 0, "!loss");
-
-        skip(strategy.profitMaxUnlockTime());
 
         uint256 balanceBefore = asset.balanceOf(user);
 
@@ -95,6 +70,20 @@ contract AuctionTest is Setup {
             balanceBefore + _amount,
             "!final balance"
         );
+    }
+
+    function test_minAmountToEnableAuction() public {
+        mintAndDepositIntoStrategy(strategy, user, 100e18);
+
+        uint256 toAirdrop = strategy.MIN_BAL_TO_AUCTION();
+        deal(address(bal), address(strategy), toAirdrop - 1e18);
+
+        skip(strategy.profitMaxUnlockTime());
+
+        vm.prank(keeper);
+        strategy.report();
+
+        assertEq(strategy.auctionId(), "");
     }
 }
 

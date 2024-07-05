@@ -53,6 +53,8 @@ contract Strategy is BaseStrategy, AuctionSwapper {
 
     uint256 public constant MIN_BAL_TO_AUCTION = 12e18; // 12 BAL
 
+    bytes32 public auctionId;
+
     IVault.FundManagement private FUNDS = IVault.FundManagement(
         address(this),
         false,
@@ -217,6 +219,7 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         override
         returns (uint256 _totalAssets)
     {
+            // Claim rewards
             bool _claimedSucessfully = AURA_POOL.getReward();
             if (!_claimedSucessfully) revert BalancerStrategy__NoAuraRewards();
 
@@ -250,6 +253,12 @@ contract Strategy is BaseStrategy, AuctionSwapper {
                 ghoAmountExpected +
                 IGhoToken(GHO).balanceOf(address(this)) + 
                 balInGho;
+
+            // Create dutch auction
+            if (balAmount >= MIN_BAL_TO_AUCTION) {
+                // TODO: use real price
+                auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e6);
+            }
     }
 
     /*//////////////////////////////////////////////////////////////

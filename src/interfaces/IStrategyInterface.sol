@@ -7,5 +7,7 @@ import {IAuctionSwapper} from "@periphery/swappers/interfaces/IAuctionSwapper.so
 interface IStrategyInterface is IStrategy, IAuctionSwapper {
     function MIN_BAL_TO_AUCTION() external view returns (uint256);
 
+    function auctionId() external view returns (bytes32);
+
     function setAuction(address _auction) external;
 }
