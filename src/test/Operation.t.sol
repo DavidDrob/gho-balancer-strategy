@@ -238,5 +238,11 @@ contract OperationTest is Setup {
 
         (trigger, ) = strategy.tendTrigger();
         assertTrue(!trigger);
+
+        uint256 toAirdrop = strategy.MIN_BAL_TO_AUCTION();
+        deal(tokenAddrs["BAL"], address(strategy), toAirdrop);
+
+        (trigger, ) = strategy.tendTrigger();
+        assertTrue(trigger);
     }
 }

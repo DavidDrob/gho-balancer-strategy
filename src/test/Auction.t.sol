@@ -72,6 +72,34 @@ contract AuctionTest is Setup {
         );
     }
 
+    function test_startAuctionOnTend() public {
+        uint256 _amount = 100e18;
+
+        // Deposit into strategy
+        mintAndDepositIntoStrategy(strategy, user, _amount);
+
+        uint256 toAirdrop = strategy.MIN_BAL_TO_AUCTION() - 1e18;
+        deal(address(bal), address(strategy), toAirdrop);
+
+        // Start an auction
+        skip(strategy.profitMaxUnlockTime());
+        deal(address(bal), address(strategy), toAirdrop);
+        vm.prank(keeper);
+        strategy.report();
+
+        assertEq(strategy.auctionId(), "");
+
+        deal(address(bal), address(strategy), strategy.MIN_BAL_TO_AUCTION());
+
+        (bool trigger, ) = strategy.tendTrigger();
+        assertTrue(trigger);
+
+        vm.prank(keeper);
+        strategy.tend();
+
+        assertNotEq(strategy.auctionId(), "");
+    }
+
     function test_minAmountToEnableAuction() public {
         mintAndDepositIntoStrategy(strategy, user, 100e18);
 

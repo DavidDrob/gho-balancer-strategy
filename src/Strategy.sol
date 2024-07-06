@@ -30,6 +30,7 @@ import "./interfaces/balancer/IWeightedPool2Tokens.sol";
 error BalancerStrategy__InvalidToken();
 error BalancerStrategy__TooLittleBAL();
 error BalancerStrategy__NoAuraRewards();
+error BalancerStrategy__FailedToDeposit();
 
 contract Strategy is BaseStrategy, AuctionSwapper {
     using SafeERC20 for ERC20;
@@ -52,6 +53,7 @@ contract Strategy is BaseStrategy, AuctionSwapper {
     uint256 public constant MAX_BPS = 10_000;
 
     uint256 public constant MIN_BAL_TO_AUCTION = 12e18; // 12 BAL
+    uint256 public constant MIN_POOL_DEPOSIT = 0.1e18; // 0.1 GHO
 
     bytes32 public auctionId;
 
@@ -102,28 +104,9 @@ contract Strategy is BaseStrategy, AuctionSwapper {
      * to deposit in the yield source.
      */
     function _deployFunds(uint256 _amount) internal override {
-        // Deposit GHO into Balancer Pool
-        IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
-            POOL_ID,
-            IVault.SwapKind.GIVEN_IN,
-            IAsset(GHO),
-            IAsset(BAL_LP),
-            _amount,
-            ""
-        );
+        bool _success = _addLiquidity(_amount);
 
-        // pool consists of stablecoins, so LP price is almost 1:1 to assets
-        uint256 limit = Math.mulDiv(_amount, SLIPPAGE, MAX_BPS);
-
-        uint256 _out = BALANCER_VAULT.swap(
-            singleSwap,
-            FUNDS,
-            limit,
-            block.timestamp
-        );
-
-        // Stake LP
-        AURA_POOL.deposit(_out, address(this));
+        if (!_success) revert BalancerStrategy__FailedToDeposit();
     }
 
     /**
@@ -400,8 +383,18 @@ contract Strategy is BaseStrategy, AuctionSwapper {
      *
      * @param _totalIdle The current amount of idle funds that are available to deploy.
      *
-    function _tend(uint256 _totalIdle) internal override {}
     */
+    function _tend(uint256 _totalIdle) internal override {
+        uint256 balBalance = IERC20(BAL).balanceOf(address(this));
+
+        if (balBalance >= MIN_BAL_TO_AUCTION) {
+            auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e6);
+        }
+
+        if (_totalIdle >= MIN_POOL_DEPOSIT) {
+            _addLiquidity(_totalIdle);
+        }
+    }
 
     /**
      * @dev Optional trigger to override if tend() will be used by the strategy.
@@ -409,8 +402,41 @@ contract Strategy is BaseStrategy, AuctionSwapper {
      *
      * @return . Should return true if tend() should be called by keeper or false if not.
      *
-    function _tendTrigger() internal view override returns (bool) {}
     */
+    function _tendTrigger() internal view override returns (bool) {
+        uint256 balBalance = IERC20(BAL).balanceOf(address(this));
+        uint256 ghoBalance = IERC20(GHO).balanceOf(address(this));
+
+        return balBalance >= MIN_BAL_TO_AUCTION ||
+               ghoBalance >= MIN_POOL_DEPOSIT;
+    }
+
+    function _addLiquidity(uint256 _amount) private returns (bool success) {
+        // Deposit GHO into Balancer Pool
+        IVault.SingleSwap memory singleSwap = IVault.SingleSwap(
+            POOL_ID,
+            IVault.SwapKind.GIVEN_IN,
+            IAsset(GHO),
+            IAsset(BAL_LP),
+            _amount,
+            ""
+        );
+
+        // pool consists of stablecoins, so LP price is almost 1:1 to assets
+        uint256 _limit = Math.mulDiv(_amount, SLIPPAGE, MAX_BPS);
+
+        uint256 _out = BALANCER_VAULT.swap(
+            singleSwap,
+            FUNDS,
+            _limit,
+            block.timestamp
+        );
+
+        // Stake LP
+        uint256 _deposited = AURA_POOL.deposit(_out, address(this));
+
+        return _deposited > 0;
+    }
 
     /**
      * @dev Optional function for a strategist to override that will
