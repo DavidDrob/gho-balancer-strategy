@@ -41,13 +41,13 @@ contract AuctionTest is Setup {
 
         auction.kick(auctionId);
 
-        // wait until the auction is 75% complete
-        skip((auction.auctionLength() * 75) / 100);
+        // wait until the auction is 5% complete
+        skip((auction.auctionLength() * 5) / 100);
         address buyer = address(62735);
         uint256 amountNeeded = auction.getAmountNeeded(auctionId, toAirdrop);
 
         // TODO: find out why using `amountNeeded` doesn't work
-        deal(address(strategy.asset()), buyer, type(uint256).max);
+        deal(address(asset), buyer, type(uint256).max);
 
         vm.prank(buyer);
         asset.approve(address(auction), type(uint256).max);
@@ -60,6 +60,11 @@ contract AuctionTest is Setup {
         assertGt(lpAfterAuction, lpBeforeAuction);
 
         uint256 balanceBefore = asset.balanceOf(user);
+
+        vm.prank(keeper);
+        strategy.report();
+
+        skip(strategy.profitMaxUnlockTime());
 
         // Withdraw all funds
         vm.prank(user);

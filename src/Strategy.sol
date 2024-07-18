@@ -49,7 +49,7 @@ contract Strategy is BaseStrategy, AuctionSwapper {
 
     bytes32 public constant POOL_ID = bytes32(0x8353157092ed8be69a9df8f95af097bbf33cb2af0000000000000000000005d9);
 
-    uint256 public constant SLIPPAGE = 9_900; // slippage in BPS
+    uint256 public constant SLIPPAGE = 9_000; // slippage in BPS
     uint256 public constant MAX_BPS = 10_000;
 
     uint256 public constant MIN_BAL_TO_AUCTION = 12e18; // 12 BAL
