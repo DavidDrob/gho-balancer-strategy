@@ -82,7 +82,6 @@ contract AuctionTest is Setup {
         mintAndDepositIntoStrategy(strategy, user, _amount);
 
         uint256 toAirdrop = strategy.MIN_BAL_TO_AUCTION() - 1e18;
-        deal(address(bal), address(strategy), toAirdrop);
 
         // Start an auction
         skip(strategy.profitMaxUnlockTime());
@@ -101,6 +100,25 @@ contract AuctionTest is Setup {
         strategy.tend();
 
         assertNotEq(strategy.auctionId(), "");
+
+        // add bal to auction
+        deal(address(bal), address(strategy), strategy.MIN_BAL_TO_AUCTION());
+
+        (trigger, ) = strategy.tendTrigger();
+        assertTrue(trigger);
+
+        vm.expectRevert("too soon");
+        vm.prank(keeper);
+        strategy.tend();
+
+        skip(5 days + 1); // cooldown
+
+        vm.prank(keeper);
+        strategy.tend();
+
+        (,,, uint256 balInAuction) = Auction(strategy.auction()).auctionInfo(strategy.auctionId());
+        assertNotEq(strategy.auctionId(), "");
+        assertGe(balInAuction, strategy.MIN_BAL_TO_AUCTION());
     }
 
     function test_minAmountToEnableAuction() public {

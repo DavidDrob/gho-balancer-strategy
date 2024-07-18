@@ -390,7 +390,10 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         uint256 balBalance = IERC20(BAL).balanceOf(address(this));
 
         if (balBalance >= MIN_BAL_TO_AUCTION) {
-            auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
+            if (auctionId == "") {
+                auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
+            }
+            
             Auction(auction).kick(auctionId);
         }
 
