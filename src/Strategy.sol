@@ -240,7 +240,9 @@ contract Strategy is BaseStrategy, AuctionSwapper {
             // Create dutch auction
             if (balAmount >= MIN_BAL_TO_AUCTION) {
                 // TODO: use real price
-                auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e6);
+                // start price doesn't include decimals
+                auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
+                Auction(auction).kick(auctionId);
             }
     }
 
@@ -388,7 +390,8 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         uint256 balBalance = IERC20(BAL).balanceOf(address(this));
 
         if (balBalance >= MIN_BAL_TO_AUCTION) {
-            auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e6);
+            auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
+            Auction(auction).kick(auctionId);
         }
 
         if (_totalIdle >= MIN_POOL_DEPOSIT) {
@@ -407,8 +410,17 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         uint256 balBalance = IERC20(BAL).balanceOf(address(this));
         uint256 ghoBalance = IERC20(GHO).balanceOf(address(this));
 
-        return balBalance >= MIN_BAL_TO_AUCTION ||
-               ghoBalance >= MIN_POOL_DEPOSIT;
+        uint128 _balInAuction;
+        if (auction != address(0)) {
+            (,,,, _balInAuction) = Auction(auction).auctions(auctionId);
+        }
+
+        return (balBalance >= MIN_BAL_TO_AUCTION) ||
+
+               (_balInAuction < MIN_BAL_TO_AUCTION &&
+               (balBalance + _balInAuction > MIN_BAL_TO_AUCTION)) ||
+
+               (ghoBalance >= MIN_POOL_DEPOSIT);
     }
 
     function _addLiquidity(uint256 _amount) private returns (bool success) {

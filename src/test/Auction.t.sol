@@ -39,10 +39,8 @@ contract AuctionTest is Setup {
         Auction auction = Auction(strategy.auction());
         bytes32 auctionId = strategy.auctionId();
 
-        auction.kick(auctionId);
-
-        // wait until the auction is 5% complete
-        skip((auction.auctionLength() * 5) / 100);
+        // wait until the auction is 25% complete
+        skip((auction.auctionLength() * 25) / 100);
         address buyer = address(62735);
         uint256 amountNeeded = auction.getAmountNeeded(auctionId, toAirdrop);
 
