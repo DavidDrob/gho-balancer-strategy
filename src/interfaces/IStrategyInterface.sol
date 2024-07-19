@@ -9,5 +9,7 @@ interface IStrategyInterface is IStrategy, IAuctionSwapper {
 
     function auctionId() external view returns (bytes32);
 
-    function setAuction(address _auction) external;
+    function updateSlippage(uint256 _slippage) external;
+
+    function slippage() external returns (uint256);
 }

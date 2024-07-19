@@ -31,6 +31,7 @@ error BalancerStrategy__InvalidToken();
 error BalancerStrategy__TooLittleBAL();
 error BalancerStrategy__NoAuraRewards();
 error BalancerStrategy__FailedToDeposit();
+error BalancerStrategy__InvalidSlippage();
 
 contract Strategy is BaseStrategy, AuctionSwapper {
     using SafeERC20 for ERC20;
@@ -49,11 +50,11 @@ contract Strategy is BaseStrategy, AuctionSwapper {
 
     bytes32 public constant POOL_ID = bytes32(0x8353157092ed8be69a9df8f95af097bbf33cb2af0000000000000000000005d9);
 
-    uint256 public constant SLIPPAGE = 9_000; // slippage in BPS
-    uint256 public constant MAX_BPS = 10_000;
-
     uint256 public constant MIN_BAL_TO_AUCTION = 12e18; // 12 BAL
     uint256 public constant MIN_POOL_DEPOSIT = 0.1e18; // 0.1 GHO
+
+    uint256 public constant MAX_BPS = 10_000;
+    uint256 public slippage = 9_000; // slippage in BPS
 
     bytes32 public auctionId;
 
@@ -79,12 +80,10 @@ contract Strategy is BaseStrategy, AuctionSwapper {
                         MANAGMENT FUNCTIONS
     //////////////////////////////////////////////////////////////*/
 
-    // TODO: do this in the constructor
-    function setAuction(address _auction) external onlyManagement {
-        if (_auction != address(0)) {
-            require(Auction(_auction).want() == address(asset));
-        }
-        auction = _auction;
+    function updateSlippage(uint256 _slippage) external onlyManagement {
+        if (_slippage > 10_000) revert BalancerStrategy__InvalidSlippage();
+
+        slippage = _slippage;
     }
 
 
@@ -282,7 +281,7 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         );
 
         // pool consists of stablecoins, so LP price is almost 1:1 to assets
-        uint256 limit = Math.mulDiv(_amountPayed, SLIPPAGE, MAX_BPS);
+        uint256 limit = Math.mulDiv(_amountPayed, slippage, MAX_BPS);
 
         uint256 _out = BALANCER_VAULT.swap(
             singleSwap,
@@ -438,7 +437,7 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         );
 
         // pool consists of stablecoins, so LP price is almost 1:1 to assets
-        uint256 _limit = Math.mulDiv(_amount, SLIPPAGE, MAX_BPS);
+        uint256 _limit = Math.mulDiv(_amount, slippage, MAX_BPS);
 
         uint256 _out = BALANCER_VAULT.swap(
             singleSwap,
