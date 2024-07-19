@@ -29,6 +29,7 @@ import "./interfaces/balancer/IWeightedPool2Tokens.sol";
 
 error BalancerStrategy__InvalidToken();
 error BalancerStrategy__TooLittleBAL();
+error BalancerStrategy__TooLittleAURA();
 error BalancerStrategy__NoAuraRewards();
 error BalancerStrategy__FailedToDeposit();
 error BalancerStrategy__InvalidSlippage();
@@ -51,12 +52,14 @@ contract Strategy is BaseStrategy, AuctionSwapper {
     bytes32 public constant POOL_ID = bytes32(0x8353157092ed8be69a9df8f95af097bbf33cb2af0000000000000000000005d9);
 
     uint256 public constant MIN_BAL_TO_AUCTION = 12e18; // 12 BAL
+    uint256 public constant MIN_AURA_TO_AUCTION = 7e18; // 7 AURA
     uint256 public constant MIN_POOL_DEPOSIT = 0.1e18; // 0.1 GHO
 
     uint256 public constant MAX_BPS = 10_000;
     uint256 public slippage = 9_000; // slippage in BPS
 
-    bytes32 public auctionId;
+    bytes32 public auctionIdBal;
+    bytes32 public auctionIdAura;
 
     IVault.FundManagement private FUNDS = IVault.FundManagement(
         address(this),
@@ -236,12 +239,20 @@ contract Strategy is BaseStrategy, AuctionSwapper {
                 IGhoToken(GHO).balanceOf(address(this)) + 
                 balInGho;
 
-            // Create dutch auction
+            // Create dutch auctions
             if (balAmount >= MIN_BAL_TO_AUCTION) {
                 // TODO: use real price
                 // start price doesn't include decimals
-                auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
-                Auction(auction).kick(auctionId);
+                auctionIdBal = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
+                Auction(auction).kick(auctionIdBal);
+            }
+
+            uint256 auraAmount = IERC20(AURA).balanceOf(address(this));
+
+            if (auraAmount >= MIN_AURA_TO_AUCTION) {
+                // start price doesn't include decimals
+                auctionIdAura = _enableAuction(AURA, GHO, 1 days, 5 days, 1e9);
+                Auction(auction).kick(auctionIdAura);
             }
     }
 
@@ -255,12 +266,16 @@ contract Strategy is BaseStrategy, AuctionSwapper {
         override
         returns (uint256 _kicked)
     {
-        if (_token != BAL) revert BalancerStrategy__InvalidToken();
-
         // send BAL to auction contract
         _kicked = super._auctionKicked(_token);
 
-        if (_kicked < MIN_BAL_TO_AUCTION) revert BalancerStrategy__TooLittleBAL();
+        if (_token == BAL) {
+            if (_kicked < MIN_BAL_TO_AUCTION) revert BalancerStrategy__TooLittleBAL();
+        } else if (_token == AURA) {
+            if (_kicked < MIN_AURA_TO_AUCTION) revert BalancerStrategy__TooLittleAURA();
+        } else {
+            revert BalancerStrategy__InvalidToken();
+        }
     }
 
     function _postTake(
@@ -387,13 +402,22 @@ contract Strategy is BaseStrategy, AuctionSwapper {
     */
     function _tend(uint256 _totalIdle) internal override {
         uint256 balBalance = IERC20(BAL).balanceOf(address(this));
+        uint256 auraBalance = IERC20(AURA).balanceOf(address(this));
 
         if (balBalance >= MIN_BAL_TO_AUCTION) {
-            if (auctionId == "") {
-                auctionId = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
+            if (auctionIdBal == "") {
+                auctionIdBal = _enableAuction(BAL, GHO, 1 days, 5 days, 1e9);
             }
             
-            Auction(auction).kick(auctionId);
+            Auction(auction).kick(auctionIdBal);
+        }
+
+        if (auraBalance >= MIN_AURA_TO_AUCTION) {
+            if (auctionIdAura == "") {
+                auctionIdAura = _enableAuction(AURA, GHO, 1 days, 5 days, 1e9);
+            }
+            
+            Auction(auction).kick(auctionIdAura);
         }
 
         if (_totalIdle >= MIN_POOL_DEPOSIT) {
@@ -411,16 +435,27 @@ contract Strategy is BaseStrategy, AuctionSwapper {
     function _tendTrigger() internal view override returns (bool) {
         uint256 balBalance = IERC20(BAL).balanceOf(address(this));
         uint256 ghoBalance = IERC20(GHO).balanceOf(address(this));
+        uint256 auraBalance = IERC20(AURA).balanceOf(address(this));
 
         uint128 _balInAuction;
         if (auction != address(0)) {
-            (,,,, _balInAuction) = Auction(auction).auctions(auctionId);
+            (,,,, _balInAuction) = Auction(auction).auctions(auctionIdBal);
+        }
+
+        uint128 _auraInAuction;
+        if (auction != address(0)) {
+            (,,,, _auraInAuction) = Auction(auction).auctions(auctionIdAura);
         }
 
         return (balBalance >= MIN_BAL_TO_AUCTION) ||
 
                (_balInAuction < MIN_BAL_TO_AUCTION &&
                (balBalance + _balInAuction > MIN_BAL_TO_AUCTION)) ||
+
+               (auraBalance >= MIN_AURA_TO_AUCTION) ||
+
+               (_auraInAuction < MIN_AURA_TO_AUCTION &&
+               (auraBalance + _auraInAuction > MIN_AURA_TO_AUCTION)) ||
 
                (ghoBalance >= MIN_POOL_DEPOSIT);
     }

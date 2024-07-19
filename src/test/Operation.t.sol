@@ -244,5 +244,17 @@ contract OperationTest is Setup {
 
         (trigger, ) = strategy.tendTrigger();
         assertTrue(trigger);
+
+        deal(tokenAddrs["BAL"], address(strategy), 0);
+
+        (trigger, ) = strategy.tendTrigger();
+        assertTrue(!trigger);
+
+        // Aura trigger
+        toAirdrop = strategy.MIN_AURA_TO_AUCTION() + 1;
+        deal(tokenAddrs["AURA"], address(strategy), toAirdrop);
+
+        (trigger, ) = strategy.tendTrigger();
+        assertTrue(trigger);
     }
 }

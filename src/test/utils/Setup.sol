@@ -156,5 +156,6 @@ contract Setup is ExtendedTest, IEvents {
         tokenAddrs["USDC"] = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
         tokenAddrs["GHO"] = 0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f;
         tokenAddrs["BAL"] = 0xba100000625a3754423978a60c9317c58a424e3D;
+        tokenAddrs["AURA"] = 0xC0c293ce456fF0ED870ADd98a0828Dd4d2903DBF;
     }
 }
